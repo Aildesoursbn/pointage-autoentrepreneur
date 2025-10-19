@@ -101,6 +101,15 @@
         #weekly-recap li:last-child {
             border-bottom: none;
         }
+        
+        /* Nouveau style pour le bouton d'effacement */
+        #btn-clear-all {
+            margin-top: 20px;
+            background-color: #757575; /* Gris foncé */
+            color: white;
+            font-size: 0.9em;
+            padding: 10px 15px;
+        }
 
     </style>
 </head>
@@ -123,6 +132,8 @@
 
         <p id="total-travail">Temps Travaillé Aujourd'hui : **00:00:00**</p>
         <button class="button" style="background-color: #795548; color: white; margin-top: 10px;" onclick="finDeJournee()">Fin de Journée & Enregistrer</button>
+
+        <button class="button" id="btn-clear-all" onclick="clearAllData()">Effacer TOUT (Danger ⚠️)</button>
 
 
         <details>
@@ -398,6 +409,43 @@
             updateButtons();
 
             alert(`Journée terminée ! Temps travaillé enregistré : ${msToHMS(dailyTime)}`);
+        }
+        
+        // --- NOUVELLE FONCTION POUR TOUT EFFACER ---
+
+        /** Efface toutes les données de l'application (journée en cours et récap hebdomadaire). */
+        function clearAllData() {
+            if (!confirm("ATTENTION : Êtes-vous sûr de vouloir EFFACER TOUTES les données (temps journalier et récap hebdomadaire) ? Cette action est irréversible.")) {
+                return; // Annuler si l'utilisateur n'est pas sûr
+            }
+
+            // Arrêter tout chronomètre en cours
+            clearInterval(travailInterval);
+            clearInterval(dejeunerInterval);
+
+            // Effacer toutes les clés spécifiques du localStorage pour cette application
+            localStorage.removeItem('tempsTravailTotal');
+            localStorage.removeItem('debutTravailSegment');
+            localStorage.removeItem('debutDejeuner');
+            localStorage.removeItem('etat');
+            localStorage.removeItem('lastDate');
+            localStorage.removeItem('weeklyRecap');
+
+            // Réinitialiser les variables d'état JavaScript
+            tempsTravailTotal = 0;
+            debutTravailSegment = null;
+            debutDejeuner = null;
+            etat = 'STOPPE';
+
+            // Mettre à jour l'interface
+            updateTravailTotalDisplay();
+            loadWeeklyRecap();
+            CHRONO_DISPLAY.textContent = "00:00:00";
+            CHRONO_DISPLAY.style.color = '#333';
+            CHRONO_DISPLAY.style.backgroundColor = '#f9f9f9';
+            updateButtons();
+
+            alert("Toutes les données de pointage ont été effacées.");
         }
 
 

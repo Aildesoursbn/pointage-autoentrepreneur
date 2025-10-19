@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-Entrepreneur Pointage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f4f4f9;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 400px;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 15px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .chrono-display {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #4CAF50;
+            margin: 15px 0;
+            background-color: #e8f5e9;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .buttons-group {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 25px;
+        }
+
+        .button {
+            padding: 15px 20px;
+            font-size: 1.1em;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            flex: 1;
+            margin: 0 5px;
+        }
+
+        #btn-travail-start, #btn-dejeuner-stop { background-color: #4CAF50; color: white; }
+        #btn-travail-stop { background-color: #f44336; color: white; }
+        #btn-dejeuner-start { background-color: #FFC107; color: #333; }
+
+        .button:hover:not(:disabled) { opacity: 0.8; }
+        .button:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        #total-travail {
+            font-size: 1.2em;
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+
+        /* Style pour le récapitulatif */
+        details {
+            text-align: left;
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 8px;
+            background-color: #e3f2fd; /* Bleu clair pour le récap */
+        }
+
+        summary {
+            font-weight: bold;
+            cursor: pointer;
+            padding: 5px 0;
+            color: #1976D2;
+        }
+
+        #weekly-recap li {
+            list-style-type: none;
+            padding: 5px 0;
+            border-bottom: 1px dotted #ccc;
+        }
+
+        #weekly-recap li:last-child {
+            border-bottom: none;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Pointage Auto-Entrepreneur ⏱️</h1>
+
+        <div class="chrono-display" id="chrono-display">00:00:00</div>
+
+        <div class="buttons-group">
+            <button class="button" id="btn-travail-start" onclick="startTravail()">Démarrer Travail</button>
+            <button class="button" id="btn-travail-stop" onclick="stopTravail()" disabled>Arrêter Travail</button>
+        </div>
+
+        <div class="buttons-group">
+            <button class="button" id="btn-dejeuner-start" onclick="startDejeuner()" disabled>Démarrer Déjeuner</button>
+            <button class="button" id="btn-dejeuner-stop" onclick="stopDejeuner()" disabled>Arrêter Déjeuner</button>
+        </div>
+
+        <p id="total-travail">Temps Travaillé Aujourd'hui : **00:00:00**</p>
+        <button class="button" style="background-color: #795548; color: white; margin-top: 10px;" onclick="finDeJournee()">Fin de Journée & Enregistrer</button>
+
+
+        <details>
+            <summary>Récapitulatif Hebdomadaire 🗓️</summary>
+            <ul id="weekly-recap">
+                </ul>
+        </details>
+
+    </div>
+
+    <script>
+        // Variables globales
+        let travailInterval;
+        let dejeunerInterval;
+        let tempsTravailTotal = 0; // Temps total de travail en millisecondes
+        let debutTravailSegment = null; // Timestamp du début du segment de travail actuel
+        let debutDejeuner = null; // Timestamp du début du déjeuner
+        let etat = 'STOPPE'; // 'TRAVAIL', 'DEJEUNER', 'STOPPE'
+
+        const CHRONO_DISPLAY = document.getElementById('chrono-display');
+        const TOTAL_TRAVAIL_DISPLAY = document.getElementById('total-travail');
+        const WEEKLY_RECAP = document.getElementById('weekly-recap');
+        const BTN_TRAVAIL_START = document.getElementById('btn-travail-start');
+        const BTN_TRAVAIL_STOP = document.getElementById('btn-travail-stop');
+        const BTN_DEJEUNER_START = document.getElementById('btn-dejeuner-start');
+        const BTN_DEJEUNER_STOP = document.getElementById('btn-dejeuner-stop');
+
+        // --- Fonctions d'aide (Formatage & Sauvegarde) ---
+
+        /**
+         * Convertit un nombre de millisecondes en format HH:MM:SS.
+         * @param {number} ms - Millisecondes.
+         * @returns {string} - Format HH:MM:SS.
+         */
+        function msToHMS(ms) {
+            const totalSeconds = Math.floor(ms / 1000);
+            const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+            const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+            const seconds = String(totalSeconds % 60).padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+        }
+
+        /** Met à jour l'affichage du temps total de travail. */
+        function updateTravailTotalDisplay() {
+            TOTAL_TRAVAIL_DISPLAY.innerHTML = `Temps Travaillé Aujourd'hui : **${msToHMS(tempsTravailTotal)}**`;
+        }
+
+        /** Sauvegarde l'état actuel et le temps total dans localStorage. */
+        function saveState() {
+            localStorage.setItem('tempsTravailTotal', tempsTravailTotal);
+            localStorage.setItem('debutTravailSegment', debutTravailSegment);
+            localStorage.setItem('debutDejeuner', debutDejeuner);
+            localStorage.setItem('etat', etat);
+            localStorage.setItem('lastDate', new Date().toDateString());
+        }
+
+        /** Charge l'état au chargement de la page. */
+        function loadState() {
+            const savedDate = localStorage.getItem('lastDate');
+            if (savedDate !== new Date().toDateString()) {
+                // Nouvelle journée, réinitialisation du temps de travail
+                tempsTravailTotal = 0;
+                localStorage.removeItem('debutTravailSegment');
+                localStorage.removeItem('debutDejeuner');
+                localStorage.setItem('lastDate', new Date().toDateString());
+            } else {
+                tempsTravailTotal = parseInt(localStorage.getItem('tempsTravailTotal')) || 0;
+                debutTravailSegment = parseInt(localStorage.getItem('debutTravailSegment')) || null;
+                debutDejeuner = parseInt(localStorage.getItem('debutDejeuner')) || null;
+                etat = localStorage.getItem('etat') || 'STOPPE';
+            }
+            updateTravailTotalDisplay();
+            loadWeeklyRecap();
+            updateButtons();
+
+            if (etat === 'TRAVAIL' && debutTravailSegment) {
+                // Relancer le chrono de travail après un rechargement
+                startChrono(true);
+            } else if (etat === 'DEJEUNER' && debutDejeuner) {
+                // Relancer le chrono de déjeuner après un rechargement
+                startChrono(false, true);
+            }
+        }
+
+        /** Charge et affiche le récapitulatif hebdomadaire. */
+        function loadWeeklyRecap() {
+            const recap = JSON.parse(localStorage.getItem('weeklyRecap')) || [];
+            WEEKLY_RECAP.innerHTML = '';
+            if (recap.length === 0) {
+                WEEKLY_RECAP.innerHTML = '<li>Aucune donnée enregistrée pour la semaine.</li>';
+                return;
+            }
+            recap.forEach(entry => {
+                const li = document.createElement('li');
+                li.textContent = `${entry.date} : ${msToHMS(entry.time)}`;
+                WEEKLY_RECAP.appendChild(li);
+            });
+        }
+
+        /** Met à jour l'état des boutons en fonction de l'état actuel. */
+        function updateButtons() {
+            BTN_TRAVAIL_START.disabled = etat !== 'STOPPE' && etat !== 'DEJEUNER';
+            BTN_TRAVAIL_STOP.disabled = etat !== 'TRAVAIL';
+            BTN_DEJEUNER_START.disabled = etat !== 'TRAVAIL';
+            BTN_DEJEUNER_STOP.disabled = etat !== 'DEJEUNER';
+        }
+
+        // --- Logique du Chronomètre ---
+
+        /** Démarre le chronomètre affiché (travail ou déjeuner). */
+        function startChrono(isTravail, isReload = false) {
+            // Arrêter tout intervalle existant
+            clearInterval(travailInterval);
+            clearInterval(dejeunerInterval);
+
+            const intervalMs = isTravail ? travailInterval : dejeunerInterval;
+            const startTimestamp = isTravail ? debutTravailSegment : debutDejeuner;
+            const currentTotalTime = isTravail ? tempsTravailTotal : 0; // Le déjeuner n'a pas de "temps total" préexistant
+
+            if (!isReload) {
+                // En cas de nouveau départ, réinitialiser l'affichage
+                CHRONO_DISPLAY.textContent = "00:00:00";
+            } else {
+                // En cas de rechargement, mettre à jour l'affichage immédiatement
+                if (isTravail) {
+                     // Mettre à jour l'affichage du travail en fonction du temps écoulé depuis le début du segment
+                     const elapsed = Date.now() - debutTravailSegment;
+                     CHRONO_DISPLAY.textContent = msToHMS(elapsed);
+                } else {
+                    // Pour le déjeuner, afficher le temps écoulé depuis le début du déjeuner
+                    const elapsed = Date.now() - debutDejeuner;
+                    CHRONO_DISPLAY.textContent = msToHMS(elapsed);
+                }
+            }
+
+
+            // Lancer le nouvel intervalle
+            if (isTravail) {
+                travailInterval = setInterval(() => {
+                    const elapsed = Date.now() - debutTravailSegment;
+                    CHRONO_DISPLAY.textContent = msToHMS(elapsed);
+                    // Pas de saveState ici, on le fait seulement quand on change d'état
+                }, 1000);
+            } else {
+                dejeunerInterval = setInterval(() => {
+                    const elapsed = Date.now() - debutDejeuner;
+                    CHRONO_DISPLAY.textContent = msToHMS(elapsed);
+                }, 1000);
+            }
+        }
+
+        // --- Fonctions de Pointage ---
+
+        /** Démarrer le travail. */
+        function startTravail() {
+            if (etat === 'TRAVAIL') return;
+
+            // Déjeuner s'arrête si c'était le cas
+            if (etat === 'DEJEUNER') {
+                clearInterval(dejeunerInterval);
+                debutDejeuner = null; // Réinitialiser le début du déjeuner
+            }
+
+            // Démarrer le nouveau segment de travail
+            debutTravailSegment = Date.now();
+            etat = 'TRAVAIL';
+            startChrono(true); // Vrai = Travail
+
+            saveState();
+            updateButtons();
+            CHRONO_DISPLAY.style.color = '#4CAF50';
+            CHRONO_DISPLAY.style.backgroundColor = '#e8f5e9';
+        }
+
+        /** Arrêter le travail (Fin de journée). */
+        function stopTravail() {
+            if (etat !== 'TRAVAIL') return;
+
+            // Ajouter le temps du segment de travail actuel au total
+            tempsTravailTotal += Date.now() - debutTravailSegment;
+            debutTravailSegment = null; // Réinitialiser le début du segment
+            clearInterval(travailInterval);
+            etat = 'STOPPE';
+
+            updateTravailTotalDisplay();
+            CHRONO_DISPLAY.textContent = msToHMS(tempsTravailTotal); // Afficher le total
+            CHRONO_DISPLAY.style.color = '#333';
+            CHRONO_DISPLAY.style.backgroundColor = '#f9f9f9';
+
+            saveState();
+            updateButtons();
+        }
+
+        /** Démarrer le déjeuner (pause). */
+        function startDejeuner() {
+            if (etat !== 'TRAVAIL') return;
+
+            // 1. Enregistrer le temps de travail écoulé avant la pause
+            tempsTravailTotal += Date.now() - debutTravailSegment;
+            clearInterval(travailInterval); // Arrêter le chrono travail
+            debutTravailSegment = null; // Le segment de travail est terminé
+
+            // 2. Démarrer le chrono déjeuner
+            debutDejeuner = Date.now();
+            etat = 'DEJEUNER';
+            startChrono(false); // Faux = Déjeuner
+
+            updateTravailTotalDisplay();
+            saveState();
+            updateButtons();
+            CHRONO_DISPLAY.style.color = '#FFC107';
+            CHRONO_DISPLAY.style.backgroundColor = '#fff8e1';
+        }
+
+        /** Arrêter le déjeuner (reprise du travail). */
+        function stopDejeuner() {
+            if (etat !== 'DEJEUNER') return;
+
+            // 1. Arrêter le chrono déjeuner (le temps de pause n'est pas stocké)
+            clearInterval(dejeunerInterval);
+            debutDejeuner = null; // Le déjeuner est terminé
+
+            // 2. Relancer le travail là où il s'était arrêté (nouveau segment)
+            debutTravailSegment = Date.now();
+            etat = 'TRAVAIL';
+            startChrono(true); // Vrai = Travail
+
+            saveState();
+            updateButtons();
+            CHRONO_DISPLAY.style.color = '#4CAF50';
+            CHRONO_DISPLAY.style.backgroundColor = '#e8f5e9';
+        }
+
+
+        /** Enregistre le total de la journée dans le récapitulatif hebdomadaire. */
+        function finDeJournee() {
+            if (etat === 'TRAVAIL') {
+                 // Si encore en TRAVAIL, enregistrer le dernier segment
+                 tempsTravailTotal += Date.now() - debutTravailSegment;
+            }
+
+            if (tempsTravailTotal === 0) {
+                alert("Aucun temps de travail enregistré pour cette journée.");
+                return;
+            }
+
+            const dailyTime = tempsTravailTotal;
+            const dailyDate = new Date().toLocaleDateString('fr-FR', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long'
+            });
+
+            // Sauvegarde dans le récap
+            let recap = JSON.parse(localStorage.getItem('weeklyRecap')) || [];
+            recap.push({ date: dailyDate, time: dailyTime });
+            localStorage.setItem('weeklyRecap', JSON.stringify(recap));
+
+            // Réinitialisation de la journée
+            tempsTravailTotal = 0;
+            debutTravailSegment = null;
+            debutDejeuner = null;
+            etat = 'STOPPE';
+            clearInterval(travailInterval);
+            clearInterval(dejeunerInterval);
+
+            localStorage.setItem('lastDate', null); // Force la réinitialisation au prochain chargement
+            saveState(); // Sauvegarde l'état réinitialisé
+
+            loadWeeklyRecap();
+            updateTravailTotalDisplay();
+            CHRONO_DISPLAY.textContent = "00:00:00"; // Affichage remis à zéro
+            updateButtons();
+
+            alert(`Journée terminée ! Temps travaillé enregistré : ${msToHMS(dailyTime)}`);
+        }
+
+
+        // --- Initialisation ---
+        window.onload = loadState;
+
+    </script>
+
+</body>
+</html>

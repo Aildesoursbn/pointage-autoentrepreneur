@@ -62,6 +62,7 @@
         #btn-travail-start, #btn-dejeuner-stop { background-color: #4CAF50; color: white; }
         #btn-travail-stop { background-color: #f44336; color: white; }
         #btn-dejeuner-start { background-color: #FFC107; color: #333; }
+        .button.end-day { background-color: #795548; color: white; }
 
         .button:hover:not(:disabled) { opacity: 0.8; }
         .button:disabled { background-color: #ccc; cursor: not-allowed; }
@@ -131,7 +132,7 @@
         </div>
 
         <p id="total-travail">Temps Travaillé Aujourd'hui : **00:00:00**</p>
-        <button class="button" style="background-color: #795548; color: white; margin-top: 10px;" onclick="finDeJournee()">Fin de Journée & Enregistrer</button>
+        <button class="button end-day" onclick="finDeJournee()">Fin de Journée & Enregistrer</button>
 
         <button class="button" id="btn-clear-all" onclick="clearAllData()">Effacer TOUT (Danger ⚠️)</button>
 
@@ -152,6 +153,10 @@
         let debutTravailSegment = null; // Timestamp du début du segment de travail actuel
         let debutDejeuner = null; // Timestamp du début du déjeuner
         let etat = 'STOPPE'; // 'TRAVAIL', 'DEJEUNER', 'STOPPE'
+        
+        // NOUVELLES VARIABLES POUR LES HEURES DE DÉBUT/FIN DE JOURNÉE
+        let heureDebutJournee = null; // Timestamp du premier 'Démarrer Travail' de la journée
+        let heureFinJournee = null; // Timestamp du 'Fin de Journée'
 
         const CHRONO_DISPLAY = document.getElementById('chrono-display');
         const TOTAL_TRAVAIL_DISPLAY = document.getElementById('total-travail');
@@ -175,6 +180,19 @@
             const seconds = String(totalSeconds % 60).padStart(2, '0');
             return `${hours}:${minutes}:${seconds}`;
         }
+        
+        /**
+         * Convertit un timestamp en format HH:MM.
+         * @param {number} timestamp - Timestamp en millisecondes.
+         * @returns {string} - Format HH:MM.
+         */
+        function timestampToHM(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${hours}:${minutes}`;
+        }
 
         /** Met à jour l'affichage du temps total de travail. */
         function updateTravailTotalDisplay() {
@@ -188,6 +206,8 @@
             localStorage.setItem('debutDejeuner', debutDejeuner);
             localStorage.setItem('etat', etat);
             localStorage.setItem('lastDate', new Date().toDateString());
+            // Sauvegarde de l'heure de début de journée
+            localStorage.setItem('heureDebutJournee', heureDebutJournee);
         }
 
         /** Charge l'état au chargement de la page. */
@@ -198,12 +218,15 @@
                 tempsTravailTotal = 0;
                 localStorage.removeItem('debutTravailSegment');
                 localStorage.removeItem('debutDejeuner');
+                localStorage.removeItem('heureDebutJournee'); // Réinitialisation du début de journée
                 localStorage.setItem('lastDate', new Date().toDateString());
             } else {
                 tempsTravailTotal = parseInt(localStorage.getItem('tempsTravailTotal')) || 0;
                 debutTravailSegment = parseInt(localStorage.getItem('debutTravailSegment')) || null;
                 debutDejeuner = parseInt(localStorage.getItem('debutDejeuner')) || null;
                 etat = localStorage.getItem('etat') || 'STOPPE';
+                // Chargement de l'heure de début de journée
+                heureDebutJournee = parseInt(localStorage.getItem('heureDebutJournee')) || null;
             }
             updateTravailTotalDisplay();
             loadWeeklyRecap();
@@ -228,7 +251,10 @@
             }
             recap.forEach(entry => {
                 const li = document.createElement('li');
-                li.textContent = `${entry.date} : ${msToHMS(entry.time)}`;
+                // Affichage du temps travaillé ET des heures de début/fin
+                const debut = timestampToHM(entry.start);
+                const fin = timestampToHM(entry.end);
+                li.textContent = `${entry.date} : ${msToHMS(entry.time)} (De ${debut} à ${fin})`;
                 WEEKLY_RECAP.appendChild(li);
             });
         }
@@ -249,22 +275,14 @@
             clearInterval(travailInterval);
             clearInterval(dejeunerInterval);
 
-            const intervalMs = isTravail ? travailInterval : dejeunerInterval;
-            const startTimestamp = isTravail ? debutTravailSegment : debutDejeuner;
-            const currentTotalTime = isTravail ? tempsTravailTotal : 0; // Le déjeuner n'a pas de "temps total" préexistant
-
             if (!isReload) {
                 // En cas de nouveau départ, réinitialiser l'affichage
                 CHRONO_DISPLAY.textContent = "00:00:00";
             } else {
                 // En cas de rechargement, mettre à jour l'affichage immédiatement
-                if (isTravail) {
-                     // Mettre à jour l'affichage du travail en fonction du temps écoulé depuis le début du segment
-                     const elapsed = Date.now() - debutTravailSegment;
-                     CHRONO_DISPLAY.textContent = msToHMS(elapsed);
-                } else {
-                    // Pour le déjeuner, afficher le temps écoulé depuis le début du déjeuner
-                    const elapsed = Date.now() - debutDejeuner;
+                const startTimestamp = isTravail ? debutTravailSegment : debutDejeuner;
+                if (startTimestamp) {
+                    const elapsed = Date.now() - startTimestamp;
                     CHRONO_DISPLAY.textContent = msToHMS(elapsed);
                 }
             }
@@ -275,7 +293,6 @@
                 travailInterval = setInterval(() => {
                     const elapsed = Date.now() - debutTravailSegment;
                     CHRONO_DISPLAY.textContent = msToHMS(elapsed);
-                    // Pas de saveState ici, on le fait seulement quand on change d'état
                 }, 1000);
             } else {
                 dejeunerInterval = setInterval(() => {
@@ -290,6 +307,11 @@
         /** Démarrer le travail. */
         function startTravail() {
             if (etat === 'TRAVAIL') return;
+            
+            // NOUVEAUTÉ : Enregistrer l'heure de début de journée si c'est le premier lancement
+            if (heureDebutJournee === null) {
+                heureDebutJournee = Date.now();
+            }
 
             // Déjeuner s'arrête si c'était le cas
             if (etat === 'DEJEUNER') {
@@ -370,9 +392,14 @@
 
         /** Enregistre le total de la journée dans le récapitulatif hebdomadaire. */
         function finDeJournee() {
+            if (etat === 'DEJEUNER') {
+                alert("Veuillez arrêter votre pause déjeuner avant de terminer la journée.");
+                return;
+            }
+
+            // Si encore en TRAVAIL, enregistrer le dernier segment
             if (etat === 'TRAVAIL') {
-                 // Si encore en TRAVAIL, enregistrer le dernier segment
-                 tempsTravailTotal += Date.now() - debutTravailSegment;
+                tempsTravailTotal += Date.now() - debutTravailSegment;
             }
 
             if (tempsTravailTotal === 0) {
@@ -380,6 +407,9 @@
                 return;
             }
 
+            // NOUVEAUTÉ : Enregistrement de l'heure de fin
+            heureFinJournee = Date.now();
+            
             const dailyTime = tempsTravailTotal;
             const dailyDate = new Date().toLocaleDateString('fr-FR', {
                 weekday: 'long',
@@ -389,13 +419,21 @@
 
             // Sauvegarde dans le récap
             let recap = JSON.parse(localStorage.getItem('weeklyRecap')) || [];
-            recap.push({ date: dailyDate, time: dailyTime });
+            recap.push({ 
+                date: dailyDate, 
+                time: dailyTime,
+                // AJOUT DES HEURES DE DÉBUT ET DE FIN
+                start: heureDebutJournee,
+                end: heureFinJournee
+            });
             localStorage.setItem('weeklyRecap', JSON.stringify(recap));
 
             // Réinitialisation de la journée
             tempsTravailTotal = 0;
             debutTravailSegment = null;
             debutDejeuner = null;
+            heureDebutJournee = null; // Réinitialisation
+            heureFinJournee = null; // Réinitialisation
             etat = 'STOPPE';
             clearInterval(travailInterval);
             clearInterval(dejeunerInterval);
@@ -407,11 +445,14 @@
             updateTravailTotalDisplay();
             CHRONO_DISPLAY.textContent = "00:00:00"; // Affichage remis à zéro
             updateButtons();
+            
+            CHRONO_DISPLAY.style.color = '#333'; // Réinitialiser le style du chrono
+            CHRONO_DISPLAY.style.backgroundColor = '#f9f9f9';
 
-            alert(`Journée terminée ! Temps travaillé enregistré : ${msToHMS(dailyTime)}`);
+            alert(`Journée terminée ! Temps travaillé enregistré : ${msToHMS(dailyTime)} (Début : ${timestampToHM(recap[recap.length - 1].start)}, Fin : ${timestampToHM(recap[recap.length - 1].end)})`);
         }
         
-        // --- NOUVELLE FONCTION POUR TOUT EFFACER ---
+        // --- FONCTION POUR TOUT EFFACER ---
 
         /** Efface toutes les données de l'application (journée en cours et récap hebdomadaire). */
         function clearAllData() {
@@ -430,11 +471,14 @@
             localStorage.removeItem('etat');
             localStorage.removeItem('lastDate');
             localStorage.removeItem('weeklyRecap');
+            localStorage.removeItem('heureDebutJournee'); // Suppression de la nouvelle clé
 
             // Réinitialiser les variables d'état JavaScript
             tempsTravailTotal = 0;
             debutTravailSegment = null;
             debutDejeuner = null;
+            heureDebutJournee = null; 
+            heureFinJournee = null; 
             etat = 'STOPPE';
 
             // Mettre à jour l'interface
